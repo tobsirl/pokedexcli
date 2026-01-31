@@ -6,7 +6,20 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 )
+
+type namedAPIResource struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+type locationAreaListResponse struct {
+	Count    int                `json:"count"`
+	Next     *string            `json:"next"`
+	Previous *string            `json:"previous"`
+	Results  []namedAPIResource `json:"results"`
+}
 
 type cliCommand struct {
 	name        string
@@ -20,6 +33,11 @@ var commands = map[string]cliCommand{
 		description: "Display the Pokedex map",
 		callback:    commandMap,
 	},
+	"mapb": {
+		name:        "mapb",
+		description: "Display the previous page of locations",
+		callback:    commandMapb,
+	},
 	"exit": {
 		name:        "exit",
 		description: "Exit the Pokedex CLI",
@@ -32,27 +50,40 @@ var commands = map[string]cliCommand{
 	},
 }
 
+var (
+	locationAreasNextURL = "https://pokeapi.co/api/v2/location-area?offset=0&limit=20"
+	locationAreasPrevURL string
+)
+
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 
-	// create a infinite loop to read user input
+	// create an infinite loop to read user input
 	for {
 		fmt.Print("Pokedex > ")
-		scanner.Scan()
+		if !scanner.Scan() {
+			break
+		}
 		input := scanner.Text()
-		cmdName := cleanInput(input)
-		cmd, ok := commands[cmdName[0]]
-		if !ok {
-			fmt.Printf("Unknown command: %s\n", input)
+		words := cleanInput(input)
+		if len(words) == 0 {
 			continue
-		} else {
-			err := cmd.callback()
-			if err != nil {
-				fmt.Printf("Error executing command %s: %v\n", cmd.name, err)
-			}
+		}
+
+		cmd, ok := commands[words[0]]
+		if !ok {
+			fmt.Println("Unknown command")
+			continue
+		}
+
+		if err := cmd.callback(); err != nil {
+			fmt.Printf("Error executing command %s: %v\n", cmd.name, err)
 		}
 	}
-		
+
+	if err := scanner.Err(); err != nil {
+		fmt.Println(err)
+	}
 }
 
 func commandExit() error {
@@ -62,17 +93,90 @@ func commandExit() error {
 }
 
 func commandHelp() error {
-		fmt.Print("Welcome to the Pokedex!\nUsage:\n\n")
-		fmt.Print("help: Display this help message\n")
-		fmt.Print("exit: Exit the Pokedex\n")
-		return nil
+	fmt.Print("Welcome to the Pokedex!\nUsage:\n\n")
+	fmt.Print("help: Display this help message\n")
+	fmt.Print("map: Display the next 20 location areas\n")
+	fmt.Print("mapb: Display the previous 20 location areas\n")
+	fmt.Print("exit: Exit the Pokedex\n")
+	return nil
 }
 
 func commandMap() error {
-	res, err := http.Get("https://pokeapi.co/api/v2/location-area")
+	if locationAreasNextURL == "" {
+		fmt.Println("No more locations")
+		return nil
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	res, err := client.Get(locationAreasNextURL)
 	if err != nil {
 		return err
 	}
-	locations := struct {
-	err := json.Unmarshal(res, &)
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return fmt.Errorf("pokeapi returned status %s", res.Status)
+	}
+
+	var payload locationAreaListResponse
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		return err
+	}
+
+	for _, location := range payload.Results {
+		fmt.Println(location.Name)
+	}
+
+	if payload.Next != nil {
+		locationAreasNextURL = *payload.Next
+	} else {
+		locationAreasNextURL = ""
+	}
+	if payload.Previous != nil {
+		locationAreasPrevURL = *payload.Previous
+	} else {
+		locationAreasPrevURL = ""
+	}
+
+	return nil
+}
+
+func commandMapb() error {
+	if locationAreasPrevURL == "" {
+		fmt.Println("No previous locations")
+		return nil
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	res, err := client.Get(locationAreasPrevURL)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return fmt.Errorf("pokeapi returned status %s", res.Status)
+	}
+
+	var payload locationAreaListResponse
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		return err
+	}
+
+	for _, location := range payload.Results {
+		fmt.Println(location.Name)
+	}
+
+	if payload.Next != nil {
+		locationAreasNextURL = *payload.Next
+	} else {
+		locationAreasNextURL = ""
+	}
+	if payload.Previous != nil {
+		locationAreasPrevURL = *payload.Previous
+	} else {
+		locationAreasPrevURL = ""
+	}
+
+	return nil
 }
