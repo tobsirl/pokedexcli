@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 )
 
@@ -13,6 +15,11 @@ type cliCommand struct {
 }
 
 var commands = map[string]cliCommand{
+	"map": {
+		name:        "map",
+		description: "Display the Pokedex map",
+		callback:    commandMap,
+	},
 	"exit": {
 		name:        "exit",
 		description: "Exit the Pokedex CLI",
@@ -59,4 +66,13 @@ func commandHelp() error {
 		fmt.Print("help: Display this help message\n")
 		fmt.Print("exit: Exit the Pokedex\n")
 		return nil
+}
+
+func commandMap() error {
+	res, err := http.Get("https://pokeapi.co/api/v2/location-area")
+	if err != nil {
+		return err
+	}
+	locations := struct {
+	err := json.Unmarshal(res, &)
 }
