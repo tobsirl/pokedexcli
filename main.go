@@ -24,6 +24,15 @@ type locationAreaListResponse struct {
 	Results  []namedAPIResource `json:"results"`
 }
 
+type pokemonEncounter struct {
+	Pokemon namedAPIResource `json:"pokemon"`
+}
+
+type locationAreaResponse struct {
+	Name              string             `json:"name"`
+	PokemonEncounters []pokemonEncounter `json:"pokemon_encounters"`
+}
+
 type cliCommand struct {
 	name        string
 	description string
@@ -46,6 +55,11 @@ var commands = map[string]cliCommand{
 		name:        "mapb",
 		description: "Display the previous page of locations",
 		callback:    commandMapb,
+	},
+	"explore": {
+		name:        "explore",
+		description: "Explore a location area",
+		callback:    commandExplore,
 	},
 	"exit": {
 		name:        "exit",
@@ -105,6 +119,7 @@ func commandHelp(_ *config, _ ...string) error {
 	fmt.Print("help: Display this help message\n")
 	fmt.Print("map: Display the next 20 location areas\n")
 	fmt.Print("mapb: Display the previous 20 location areas\n")
+	fmt.Print("explore <area_name>: Explore a location area\n")
 	fmt.Print("exit: Exit the Pokedex\n")
 	return nil
 }
@@ -174,6 +189,35 @@ func commandMapb(cfg *config, _ ...string) error {
 		cfg.Previous = *payload.Previous
 	} else {
 		cfg.Previous = ""
+	}
+
+	return nil
+}
+
+func commandExplore(cfg *config, args ...string) error {
+	if len(args) < 1 {
+		fmt.Println("usage: explore <area_name>")
+		return nil
+	}
+
+	areaName := args[0]
+	url := fmt.Sprintf("https://pokeapi.co/api/v2/location-area/%s", areaName)
+
+	fmt.Printf("Exploring %s...\n", areaName)
+
+	body, err := getWithCache(cfg.Cache, url)
+	if err != nil {
+		return err
+	}
+
+	var payload locationAreaResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return err
+	}
+
+	fmt.Println("Found Pokemon:")
+	for _, encounter := range payload.PokemonEncounters {
+		fmt.Printf(" - %s\n", encounter.Pokemon.Name)
 	}
 
 	return nil
