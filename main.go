@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
-	"time"
 )
 
 type namedAPIResource struct {
@@ -24,7 +24,12 @@ type locationAreaListResponse struct {
 type cliCommand struct {
 	name        string
 	description string
-	callback    func() error
+	callback    func(*config, ...string) error
+}
+
+type config struct {
+	Next     string
+	Previous string
 }
 
 var commands = map[string]cliCommand{
@@ -50,13 +55,9 @@ var commands = map[string]cliCommand{
 	},
 }
 
-var (
-	locationAreasNextURL = "https://pokeapi.co/api/v2/location-area?offset=0&limit=20"
-	locationAreasPrevURL string
-)
-
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
+	cfg := &config{Next: "https://pokeapi.co/api/v2/location-area?offset=0&limit=20"}
 
 	// create an infinite loop to read user input
 	for {
@@ -76,7 +77,7 @@ func main() {
 			continue
 		}
 
-		if err := cmd.callback(); err != nil {
+		if err := cmd.callback(cfg, words[1:]...); err != nil {
 			fmt.Printf("Error executing command %s: %v\n", cmd.name, err)
 		}
 	}
@@ -86,13 +87,13 @@ func main() {
 	}
 }
 
-func commandExit() error {
+func commandExit(_ *config, _ ...string) error {
 	fmt.Println("Closing the Pokedex... Goodbye!")
 	os.Exit(0)
 	return nil
 }
 
-func commandHelp() error {
+func commandHelp(_ *config, _ ...string) error {
 	fmt.Print("Welcome to the Pokedex!\nUsage:\n\n")
 	fmt.Print("help: Display this help message\n")
 	fmt.Print("map: Display the next 20 location areas\n")
@@ -101,14 +102,14 @@ func commandHelp() error {
 	return nil
 }
 
-func commandMap() error {
-	if locationAreasNextURL == "" {
+
+func commandMap(cfg *config, _ ...string) error {
+	if cfg.Next == "" {
 		fmt.Println("No more locations")
 		return nil
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	res, err := client.Get(locationAreasNextURL)
+	res, err := http.Get(cfg.Next)
 	if err != nil {
 		return err
 	}
@@ -118,8 +119,13 @@ func commandMap() error {
 		return fmt.Errorf("pokeapi returned status %s", res.Status)
 	}
 
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+
 	var payload locationAreaListResponse
-	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return err
 	}
 
@@ -128,27 +134,27 @@ func commandMap() error {
 	}
 
 	if payload.Next != nil {
-		locationAreasNextURL = *payload.Next
+		cfg.Next = *payload.Next
 	} else {
-		locationAreasNextURL = ""
+		cfg.Next = ""
 	}
 	if payload.Previous != nil {
-		locationAreasPrevURL = *payload.Previous
+		cfg.Previous = *payload.Previous
 	} else {
-		locationAreasPrevURL = ""
+		cfg.Previous = ""
 	}
 
 	return nil
 }
 
-func commandMapb() error {
-	if locationAreasPrevURL == "" {
-		fmt.Println("No previous locations")
+
+func commandMapb(cfg *config, _ ...string) error {
+	if cfg.Previous == "" {
+		fmt.Println("you're on the first page")
 		return nil
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	res, err := client.Get(locationAreasPrevURL)
+	res, err := http.Get(cfg.Previous)
 	if err != nil {
 		return err
 	}
@@ -158,8 +164,13 @@ func commandMapb() error {
 		return fmt.Errorf("pokeapi returned status %s", res.Status)
 	}
 
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+
 	var payload locationAreaListResponse
-	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return err
 	}
 
@@ -168,14 +179,14 @@ func commandMapb() error {
 	}
 
 	if payload.Next != nil {
-		locationAreasNextURL = *payload.Next
+		cfg.Next = *payload.Next
 	} else {
-		locationAreasNextURL = ""
+		cfg.Next = ""
 	}
 	if payload.Previous != nil {
-		locationAreasPrevURL = *payload.Previous
+		cfg.Previous = *payload.Previous
 	} else {
-		locationAreasPrevURL = ""
+		cfg.Previous = ""
 	}
 
 	return nil
