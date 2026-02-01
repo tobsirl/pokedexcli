@@ -7,6 +7,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
+
+	"github.com/tobsirl/pokedexcli/internal/pokecache"
 )
 
 type namedAPIResource struct {
@@ -30,6 +33,7 @@ type cliCommand struct {
 type config struct {
 	Next     string
 	Previous string
+	Cache    *pokecache.Cache
 }
 
 var commands = map[string]cliCommand{
@@ -57,7 +61,10 @@ var commands = map[string]cliCommand{
 
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
-	cfg := &config{Next: "https://pokeapi.co/api/v2/location-area?offset=0&limit=20"}
+	cfg := &config{
+		Next:  "https://pokeapi.co/api/v2/location-area?offset=0&limit=20",
+		Cache: pokecache.NewCache(5 * time.Second),
+	}
 
 	// create an infinite loop to read user input
 	for {
@@ -109,17 +116,7 @@ func commandMap(cfg *config, _ ...string) error {
 		return nil
 	}
 
-	res, err := http.Get(cfg.Next)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return fmt.Errorf("pokeapi returned status %s", res.Status)
-	}
-
-	body, err := io.ReadAll(res.Body)
+	body, err := getWithCache(cfg.Cache, cfg.Next)
 	if err != nil {
 		return err
 	}
@@ -154,17 +151,7 @@ func commandMapb(cfg *config, _ ...string) error {
 		return nil
 	}
 
-	res, err := http.Get(cfg.Previous)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		return fmt.Errorf("pokeapi returned status %s", res.Status)
-	}
-
-	body, err := io.ReadAll(res.Body)
+	body, err := getWithCache(cfg.Cache, cfg.Previous)
 	if err != nil {
 		return err
 	}
@@ -190,4 +177,33 @@ func commandMapb(cfg *config, _ ...string) error {
 	}
 
 	return nil
+}
+
+func getWithCache(cache *pokecache.Cache, url string) ([]byte, error) {
+	if cache != nil {
+		if val, ok := cache.Get(url); ok {
+			return val, nil
+		}
+	}
+
+	res, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return nil, fmt.Errorf("pokeapi returned status %s", res.Status)
+	}
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if cache != nil {
+		cache.Add(url, body)
+	}
+
+	return body, nil
 }
