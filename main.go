@@ -39,6 +39,17 @@ type pokemonResponse struct {
 	BaseExperience int    `json:"base_experience"`
 	Height         int    `json:"height"`
 	Weight         int    `json:"weight"`
+	Stats          []struct {
+		BaseStat int `json:"base_stat"`
+		Stat     struct {
+			Name string `json:"name"`
+		} `json:"stat"`
+	} `json:"stats"`
+	Types []struct {
+		Type struct {
+			Name string `json:"name"`
+		} `json:"type"`
+	} `json:"types"`
 }
 
 type Pokemon struct {
@@ -46,6 +57,8 @@ type Pokemon struct {
 	BaseExperience int
 	Height         int
 	Weight         int
+	Stats          map[string]int
+	Types          []string
 }
 
 type cliCommand struct {
@@ -67,6 +80,11 @@ var commands = map[string]cliCommand{
 		name:        "catch",
 		description: "Catch a Pokemon",
 		callback:    commandCatch,
+	},
+	"inspect": {
+		name:        "inspect",
+		description: "Inspect a caught Pokemon",
+		callback:    commandInspect,
 	},
 	"map": {
 		name:        "map",
@@ -142,6 +160,7 @@ func commandHelp(_ *config, _ ...string) error {
 	fmt.Print("Welcome to the Pokedex!\nUsage:\n\n")
 	fmt.Print("help: Display this help message\n")
 	fmt.Print("catch <pokemon_name>: Throw a Pokeball and try to catch a Pokemon\n")
+	fmt.Print("inspect <pokemon_name>: View details about a caught Pokemon\n")
 	fmt.Print("map: Display the next 20 location areas\n")
 	fmt.Print("mapb: Display the previous 20 location areas\n")
 	fmt.Print("explore <area_name>: Explore a location area\n")
@@ -199,16 +218,66 @@ func commandCatch(cfg *config, args ...string) error {
 		if cfg.Pokedex == nil {
 			cfg.Pokedex = make(map[string]Pokemon)
 		}
+
+		stats := make(map[string]int, len(payload.Stats))
+		for _, s := range payload.Stats {
+			stats[s.Stat.Name] = s.BaseStat
+		}
+		types := make([]string, 0, len(payload.Types))
+		for _, t := range payload.Types {
+			types = append(types, t.Type.Name)
+		}
+
 		cfg.Pokedex[payload.Name] = Pokemon{
 			Name:           payload.Name,
 			BaseExperience: payload.BaseExperience,
 			Height:         payload.Height,
 			Weight:         payload.Weight,
+			Stats:          stats,
+			Types:          types,
 		}
 		return nil
 	}
 
 	fmt.Printf("%s escaped!\n", payload.Name)
+	return nil
+}
+
+func commandInspect(cfg *config, args ...string) error {
+	if len(args) < 1 {
+		fmt.Println("usage: inspect <pokemon_name>")
+		return nil
+	}
+
+	pokemonName := args[0]
+	if cfg == nil || cfg.Pokedex == nil {
+		fmt.Println("you have not caught that pokemon")
+		return nil
+	}
+
+	p, ok := cfg.Pokedex[pokemonName]
+	if !ok {
+		fmt.Println("you have not caught that pokemon")
+		return nil
+	}
+
+	fmt.Printf("Name: %s\n", p.Name)
+	fmt.Printf("Height: %d\n", p.Height)
+	fmt.Printf("Weight: %d\n", p.Weight)
+
+	fmt.Println("Stats:")
+	statOrder := []string{"hp", "attack", "defense", "special-attack", "special-defense", "speed"}
+	for _, statName := range statOrder {
+		if val, ok := p.Stats[statName]; ok {
+			fmt.Printf("  -%s: %d\n", statName, val)
+		}
+	}
+
+	fmt.Println("Types:")
+	for _, t := range p.Types {
+		fmt.Printf("  - %s\n", t)
+	}
+
 	return nil
 }
 
