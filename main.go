@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/tobsirl/pokedexcli/internal/pokecache"
@@ -86,6 +87,11 @@ var commands = map[string]cliCommand{
 		description: "Inspect a caught Pokemon",
 		callback:    commandInspect,
 	},
+	"pokedex": {
+		name:        "pokedex",
+		description: "List all caught Pokemon",
+		callback:    commandPokedex,
+	},
 	"map": {
 		name:        "map",
 		description: "Display the Pokedex map",
@@ -161,6 +167,7 @@ func commandHelp(_ *config, _ ...string) error {
 	fmt.Print("help: Display this help message\n")
 	fmt.Print("catch <pokemon_name>: Throw a Pokeball and try to catch a Pokemon\n")
 	fmt.Print("inspect <pokemon_name>: View details about a caught Pokemon\n")
+	fmt.Print("pokedex: List all caught Pokemon\n")
 	fmt.Print("map: Display the next 20 location areas\n")
 	fmt.Print("mapb: Display the previous 20 location areas\n")
 	fmt.Print("explore <area_name>: Explore a location area\n")
@@ -215,6 +222,7 @@ func commandCatch(cfg *config, args ...string) error {
 	chance := catchChanceFromBaseExperience(payload.BaseExperience)
 	if rng.Float64() < chance {
 		fmt.Printf("%s was caught!\n", payload.Name)
+		fmt.Println("You may now inspect it with the inspect command.")
 		if cfg.Pokedex == nil {
 			cfg.Pokedex = make(map[string]Pokemon)
 		}
@@ -240,6 +248,24 @@ func commandCatch(cfg *config, args ...string) error {
 	}
 
 	fmt.Printf("%s escaped!\n", payload.Name)
+	return nil
+}
+
+func commandPokedex(cfg *config, _ ...string) error {
+	fmt.Println("Your Pokedex:")
+	if cfg == nil || cfg.Pokedex == nil || len(cfg.Pokedex) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(cfg.Pokedex))
+	for name := range cfg.Pokedex {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		fmt.Printf(" - %s\n", name)
+	}
+
 	return nil
 }
 
