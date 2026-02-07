@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"time"
@@ -33,6 +34,20 @@ type locationAreaResponse struct {
 	PokemonEncounters []pokemonEncounter `json:"pokemon_encounters"`
 }
 
+type pokemonResponse struct {
+	Name           string `json:"name"`
+	BaseExperience int    `json:"base_experience"`
+	Height         int    `json:"height"`
+	Weight         int    `json:"weight"`
+}
+
+type Pokemon struct {
+	Name           string
+	BaseExperience int
+	Height         int
+	Weight         int
+}
+
 type cliCommand struct {
 	name        string
 	description string
@@ -43,9 +58,16 @@ type config struct {
 	Next     string
 	Previous string
 	Cache    *pokecache.Cache
+	Pokedex  map[string]Pokemon
+	Rand     *rand.Rand
 }
 
 var commands = map[string]cliCommand{
+	"catch": {
+		name:        "catch",
+		description: "Catch a Pokemon",
+		callback:    commandCatch,
+	},
 	"map": {
 		name:        "map",
 		description: "Display the Pokedex map",
@@ -78,6 +100,8 @@ func main() {
 	cfg := &config{
 		Next:  "https://pokeapi.co/api/v2/location-area?offset=0&limit=20",
 		Cache: pokecache.NewCache(5 * time.Second),
+		Pokedex: make(map[string]Pokemon),
+		Rand:    rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 
 	// create an infinite loop to read user input
@@ -117,10 +141,74 @@ func commandExit(_ *config, _ ...string) error {
 func commandHelp(_ *config, _ ...string) error {
 	fmt.Print("Welcome to the Pokedex!\nUsage:\n\n")
 	fmt.Print("help: Display this help message\n")
+	fmt.Print("catch <pokemon_name>: Throw a Pokeball and try to catch a Pokemon\n")
 	fmt.Print("map: Display the next 20 location areas\n")
 	fmt.Print("mapb: Display the previous 20 location areas\n")
 	fmt.Print("explore <area_name>: Explore a location area\n")
 	fmt.Print("exit: Exit the Pokedex\n")
+	return nil
+}
+
+func catchChanceFromBaseExperience(baseExperience int) float64 {
+	if baseExperience < 0 {
+		baseExperience = 0
+	}
+
+	// Higher base experience => harder to catch.
+	// Clamp into a reasonable range so common Pokemon are catchable within a few tries.
+	chance := 1.0 - (float64(baseExperience) / 500.0)
+	if chance < 0.05 {
+		chance = 0.05
+	}
+	if chance > 0.85 {
+		chance = 0.85
+	}
+	return chance
+}
+
+func commandCatch(cfg *config, args ...string) error {
+	if len(args) < 1 {
+		fmt.Println("usage: catch <pokemon_name>")
+		return nil
+	}
+
+	pokemonName := args[0]
+	url := fmt.Sprintf("https://pokeapi.co/api/v2/pokemon/%s", pokemonName)
+
+	body, err := getWithCache(cfg.Cache, url)
+	if err != nil {
+		return err
+	}
+
+	var payload pokemonResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return err
+	}
+
+	// Must print this before deciding caught vs escaped.
+	fmt.Printf("Throwing a Pokeball at %s...\n", payload.Name)
+
+	rng := cfg.Rand
+	if rng == nil {
+		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+
+	chance := catchChanceFromBaseExperience(payload.BaseExperience)
+	if rng.Float64() < chance {
+		fmt.Printf("%s was caught!\n", payload.Name)
+		if cfg.Pokedex == nil {
+			cfg.Pokedex = make(map[string]Pokemon)
+		}
+		cfg.Pokedex[payload.Name] = Pokemon{
+			Name:           payload.Name,
+			BaseExperience: payload.BaseExperience,
+			Height:         payload.Height,
+			Weight:         payload.Weight,
+		}
+		return nil
+	}
+
+	fmt.Printf("%s escaped!\n", payload.Name)
 	return nil
 }
 
